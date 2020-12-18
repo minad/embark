@@ -678,6 +678,11 @@ BODY."
        (setq inhibit-message t)
        (top-level))))
 
+(defun embark--command-execute (cmd)
+  "Execute command CMD in embark target buffer."
+  (with-current-buffer embark--target-buffer
+    (command-execute cmd)))
+
 (defun embark--activate-keymap (continuep &optional arg)
   "Set transient keymap with bindings for type-specific actions.
 If CONTINUEP is nil, exit all minibuffers too.  ARG is the prefix
@@ -703,7 +708,7 @@ argument to use, if any."
                                    embark-export)))
        (embark-after-exit
          (this-command prefix-arg embark--command embark--target-buffer)
-         (let (use-dialog-box) (command-execute this-command)))))))
+         (let (use-dialog-box) (embark--command-execute this-command)))))))
 
 (defun embark--prompt (continuep ps &optional arg)
   "Prompt user for action and handle choice.
@@ -730,12 +735,12 @@ use for the action."
              (setq this-command cmd)
              (setq prefix-arg arg)
              (if continuep
-                 (command-execute cmd)
+                 (embark--command-execute cmd)
                (embark-after-exit (this-command
                                    prefix-arg
                                    embark--command
                                    embark--target-buffer)
-                 (command-execute cmd))))))))
+                 (embark--command-execute cmd))))))))
 
 (defun embark-act (&optional arg ps continuep)
   "Embark upon an action and exit from all minibuffers (if any).
@@ -1426,11 +1431,10 @@ This is whatever command opened the minibuffer in the first place."
   (setq this-command embark--command)   ; so the proper hooks apply
   (call-interactively embark--command))
 
-(defun embark-insert ()
-  "Insert embark target at point into the previously selected buffer."
-  (interactive)
-  (with-current-buffer embark--target-buffer
-    (insert (substring-no-properties (embark-target)))))
+(defun embark-insert (str)
+  "Insert STR at point into the current buffer."
+  (interactive "sString: ")
+  (insert str))
 
 (defun embark-save (str)
   "Save STR in the kill ring."
@@ -1472,20 +1476,19 @@ This is whatever command opened the minibuffer in the first place."
       (browse-url url)
     (message "No homepage found for `%s'" pkg)))
 
-(defun embark-insert-relative-path ()
-  "Insert relative path to embark target.
+(defun embark-insert-relative-path (file)
+  "Insert relative path to FILE.
 The insert path is relative to the previously selected buffer's
 `default-directory'."
-  (interactive)
-  (with-current-buffer embark--target-buffer
-    (insert (file-relative-name (substitute-in-file-name (embark-target))))))
+  (interactive "FFile: ")
+  (insert (file-relative-name (substitute-in-file-name file))))
 
-(defun embark-save-relative-path ()
-  "Save the relative path to embark target to kill ring.
+(defun embark-save-relative-path (file)
+  "Save the relative path to FILE to kill ring.
 The insert path is relative to the previously selected buffer's
 `default-directory'."
-  (interactive)
-  (kill-new (file-relative-name (substitute-in-file-name (embark-target)))))
+  (interactive "FFile: ")
+  (kill-new (file-relative-name (substitute-in-file-name file))))
 
 (defun embark-shell-command-on-buffer (buffer command &optional replace)
   "Run shell COMMAND on contents of BUFFER.
@@ -1522,9 +1525,7 @@ with command output.  For replacement behaviour see
 (defun embark-insert-unicode-character ()
   "Insert unicode character named by embark target."
   (interactive)
-  (let ((char (read-char-by-name "Insert character  (Unicode name or hex): ")))
-    (with-current-buffer embark--target-buffer
-      (insert-char char))))
+  (insert-char (read-char-by-name "Insert character  (Unicode name or hex): ")))
 
 (defun embark-save-unicode-character (char)
   "Save unicode character CHAR to kill ring."
