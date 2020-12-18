@@ -806,25 +806,23 @@ PS is the prompt style to use and defaults to
     (add-hook 'minibuffer-setup-hook #'embark--become-inject)
     (embark--prompt t (or ps embark-prompt-style) arg)))
 
-(defmacro embark-make-keymap (&rest bindings)
-  "Return keymap with bindings given by BINDINGS."
-  (let* ((map (make-symbol "map"))
-         (parent (if (eq :parent (car bindings)) (cadr bindings)))
-         (bindings (if parent (cddr bindings) bindings)))
-    `(let ((,map (make-sparse-keymap)))
-       ,@(mapcar (pcase-lambda (`(,key ,fn))
-                   (when (stringp key) (setq key (kbd key)))
-                   `(define-key ,map ,key ,(if (symbolp fn) `#',fn fn)))
-                 bindings)
-       ,(if parent `(make-composed-keymap ,map ,parent) map))))
-
-(defmacro embark-define-keymap (name doc &rest bindings)
+(defmacro embark-keymap (name doc &rest bindings)
   "Define keymap variable NAME.
 
 DOC is the documentation string.
 BINDINGS is the list of bindings."
   (declare (indent 1))
-  `(defvar ,name (embark-make-keymap ,@bindings) ,doc))
+  (let* ((map (make-symbol "map"))
+         (parent (if (eq :parent (car bindings)) (cadr bindings)))
+         (bindings (if parent (cddr bindings) bindings)))
+    `(defvar ,name
+       (let ((,map (make-sparse-keymap)))
+         ,@(mapcar (pcase-lambda (`(,key ,fn))
+                     (when (stringp key) (setq key (kbd key)))
+                     `(define-key ,map ,key ,(if (symbolp fn) `#',fn fn)))
+                   bindings)
+         ,(if parent `(make-composed-keymap ,map ,parent) map))
+       ,doc)))
 
 ;;; embark occur
 
@@ -1032,7 +1030,7 @@ If you are using `embark-completing-read' as your
     (embark-default-action)
     (run-hooks 'embark-post-action-hook)))
 
-(embark-define-keymap embark-occur-mode-map
+(embark-keymap embark-occur-mode-map
   "Keymap for Embark occur mode."
   ("a" embark-act)
   ("A" embark-occur-direct-action-minor-mode)
@@ -1571,7 +1569,7 @@ and leaves the point to the left of it."
 
 ;;; keymaps
 
-(embark-define-keymap embark-meta-map
+(embark-keymap embark-meta-map
   "Keymap for non-action Embark functions."
   :parent universal-argument-map
   ("C-h" embark-keymap-help)
@@ -1579,7 +1577,7 @@ and leaves the point to the left of it."
   ("C-g" ignore)
   ([remap self-insert-command] embark-undefined))
 
-(embark-define-keymap embark-general-map
+(embark-keymap embark-general-map
   "Keymap for Embark general actions."
   :parent embark-meta-map
   ("i" embark-insert)
@@ -1591,7 +1589,7 @@ and leaves the point to the left of it."
 
 (autoload 'org-table-convert-region "org-table")
 
-(embark-define-keymap embark-region-map
+(embark-keymap embark-region-map
   "Keymap for Embark actions on the active region."
   ("u" upcase-region)
   ("l" downcase-region)
@@ -1613,7 +1611,7 @@ and leaves the point to the left of it."
   ("n" narrow-to-region)
   ("RET" embark-act-on-region-contents))
 
-(embark-define-keymap embark-file-map
+(embark-keymap embark-file-map
   "Keymap for Embark file actions."
   ("f" find-file)
   ("o" find-file-other-window)
@@ -1631,12 +1629,12 @@ and leaves the point to the left of it."
   ("b" byte-compile-file)
   ("B" byte-recompile-directory))
 
-(embark-define-keymap embark-url-map
+(embark-keymap embark-url-map
   "Keymap for Embark url actions."
   ("b" browse-url)
   ("e" eww))
 
-(embark-define-keymap embark-buffer-map
+(embark-keymap embark-buffer-map
   "Keymap for Embark buffer actions."
   ("k" kill-buffer)
   ("b" switch-to-buffer)
@@ -1647,7 +1645,7 @@ and leaves the point to the left of it."
   ("=" ediff-buffers)
   ("|" embark-shell-command-on-buffer))
 
-(embark-define-keymap embark-symbol-map
+(embark-keymap embark-symbol-map
   "Keymap for Embark symbol actions."
   ("h" describe-symbol)
   ("c" Info-goto-emacs-command-node)
@@ -1656,7 +1654,7 @@ and leaves the point to the left of it."
   ("b" where-is)
   ("e" eval-expression))
 
-(embark-define-keymap embark-package-map
+(embark-keymap embark-package-map
   "Keymap for Embark package actions."
   ("h" describe-package)
   ("i" package-install)
@@ -1667,12 +1665,12 @@ and leaves the point to the left of it."
   ("a" package-autoremove)
   ("g" package-refresh-contents))
 
-(embark-define-keymap embark-unicode-name-map
+(embark-keymap embark-unicode-name-map
   "Keymap for Embark unicode name actions."
   ("I" embark-insert-unicode-character)
   ("W" embark-save-unicode-character))
 
-(embark-define-keymap embark-become-help-map
+(embark-keymap embark-become-help-map
   "Keymap for Embark help actions."
   ("V" apropos-variable)
   ("U" apropos-user-option)
@@ -1686,7 +1684,7 @@ and leaves the point to the left of it."
 
 (autoload 'recentf-open-files "recentf")
 
-(embark-define-keymap embark-become-file+buffer-map
+(embark-keymap embark-become-file+buffer-map
   "Embark become keymap for files and buffers."
   ("f" find-file)
   ("p" project-find-file)
@@ -1695,14 +1693,14 @@ and leaves the point to the left of it."
   ("l" locate)
   ("L" find-library))
 
-(embark-define-keymap embark-become-shell-command-map
+(embark-keymap embark-become-shell-command-map
   "Embark become keymap for shell commands."
   ("!" shell-command)
   ("&" async-shell-command)
   ("c" comint-run)
   ("t" term))
 
-(embark-define-keymap embark-become-match-map
+(embark-keymap embark-become-match-map
   "Embark become keymap for search."
   ("o" occur)
   ("k" keep-lines)
