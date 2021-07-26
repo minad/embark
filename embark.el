@@ -124,6 +124,7 @@
     (identifier . embark-identifier-map)
     (defun . embark-defun-map)
     (symbol . embark-symbol-map)
+    (typo . embark-typo-map)
     (face . embark-face-map)
     (command . embark-command-map)
     (variable . embark-variable-map)
@@ -145,6 +146,7 @@ For any type not listed here, `embark-act' will use
     embark-target-collect-candidate
     embark-target-completion-at-point
     embark-target-bug-reference-at-point
+    embark-target-typo-at-point
     embark-target-url-at-point
     embark-target-file-at-point
     embark-target-custom-variable-at-point
@@ -514,6 +516,14 @@ In `dired-mode', it uses `dired-get-filename' instead."
                            (overlays-at (point)))))
     `(url ,(overlay-get ov 'bug-reference-url)
           ,(overlay-start ov) . ,(overlay-end ov))))
+
+(defun embark-target-typo-at-point ()
+  "Target a typo at point."
+  (when-let ((ov (seq-find (lambda (ov) (overlay-get ov 'flyspell-overlay))
+                           (overlays-at (point)))))
+    (let ((beg (overlay-start ov))
+          (end (overlay-end ov)))
+      `(typo ,(buffer-substring beg end) ,beg . ,end))))
 
 (defun embark-target-url-at-point ()
   "Target the URL at point."
@@ -2470,6 +2480,10 @@ and leaves the point to the left of it."
   ("o" checkdoc-defun)
   ("n" narrow-to-defun)
   ("SPC" mark-defun))
+
+(embark-define-keymap embark-typo-map
+  "Keymap for Embark type actions."
+  ("RET" ispell-word))
 
 (embark-define-keymap embark-symbol-map
   "Keymap for Embark symbol actions."
