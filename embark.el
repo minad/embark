@@ -900,14 +900,10 @@ Used by `embark-verbose-indicator'.")
 Used by `embark-verbose-indicator'.")
 
 (defcustom embark-verbose-indicator-display-action
-  `(display-buffer-reuse-window
-    (window-parameters
-     (mode-line-format
-      . ,(propertize " *Embark Actions*" 'face 'bold))))
-  ;;'(display-buffer-reuse-window)
-  ;;'(display-buffer-in-side-window (side . right))
-  ;;'(display-buffer-below-selected (window-height . 15))
-  ;;'(display-buffer-below-selected (window-height . fit-window-to-buffer))
+  '(display-buffer-reuse-window (dedicated . t))
+  ;;'(display-buffer-in-side-window (side . right) (dedicated . t))
+  ;;'(display-buffer-below-selected (window-height . 15) (dedicated . t))
+  ;;'(display-buffer-below-selected (window-height . fit-window-to-buffer) (dedicated . t))
   "Parameters added to `display-buffer-alist' to show the actions buffer."
   :type 'list)
 
@@ -992,7 +988,7 @@ TARGETS is the list of targets."
     (lambda (prefix)
       (if prefix
           (embark--verbose-indicator-update (lookup-key keymap prefix) target other-targets)
-        (embark-kill-buffer-and-window embark--verbose-indicator-buffer)
+        (kill-buffer embark--verbose-indicator-buffer)
         (when-let (win (active-minibuffer-window))
           (select-window win))))))
 
