@@ -2021,6 +2021,9 @@ default initial view for types not mentioned separately."
     (bookmark . embark-export-bookmarks)
     (variable . embark-export-customize-variable)
     (face . embark-export-customize-face)
+    (symbol . embark-export-apropos)
+    (function . embark-export-apropos)
+    (command . embark-export-apropos)
     (t . embark-collect-snapshot))
   "Alist associating completion types to export functions.
 Each function should take a list of strings which are candidates
@@ -2778,6 +2781,14 @@ PRED is a predicate function used to filter the items."
             for sym = (intern-soft item)
             when (and sym (funcall pred sym)) collect `(,sym ,type))
    (format "*Embark Export %s*" title)))
+
+(autoload 'apropos-symbols-internal "apropos")
+(defun embark-export-apropos (symbols)
+  "Create apropos buffer listing SYMBOLS."
+  (apropos-symbols-internal
+   (delq nil (mapcar #'intern-soft symbols))
+   (bound-and-true-p apropos-do-all))
+  (embark-rename-buffer "*Apropos*" "*Embark Export Apropos*" t))
 
 (defun embark-export-customize-face (faces)
   "Create a customization buffer listing FACES."
