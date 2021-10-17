@@ -609,9 +609,6 @@ There are three kinds:
 (defvar-local embark-collect-linked-buffer nil
   "Buffer local variable indicating which Embark Buffer to update.")
 
-(defvar-local embark-collect-affixator nil
-  "Affixation function of minibuffer session for this collect.")
-
 (defvar-local embark--collect-live--timer nil
   "Timer scheduled to update Embark Collect Live buffer.")
 
@@ -2034,7 +2031,8 @@ These are used to fill an Embark Collect buffer.  Each function
 should return either nil (to indicate it found no candidates) or
 a list whose first element is a symbol indicating the type of
 candidates and whose `cdr' is the list of candidates, each of
-which should be a string."
+which should be a string or a three-element list. Each three-element
+list consists of the candidate, the prefix and the annotation string."
   :type 'hook)
 
 (defcustom embark-collect-initial-view-alist
@@ -2131,6 +2129,23 @@ This function is used as :after advice for `tabulated-list-revert'."
            (package--from-builtin built-in)
            (car (alist-get pkg package-archive-contents)))))
 
+(defun embark--affixate (candidates &optional buffer)
+  "Affixate CANDIDATES in BUFFER."
+  (setq buffer (or buffer (current-buffer)))
+  (if (minibufferp buffer)
+      (with-current-buffer buffer
+        (let ((md (embark--metadata)))
+          (if-let (aff (or (completion-metadata-get md 'affixation-function)
+                           (plist-get completion-extra-properties :affixation-function)))
+              (funcall aff candidates)
+            (if-let (ann (or (completion-metadata-get md 'annotation-function)
+                             (plist-get completion-extra-properties :annotation-function)))
+                (mapcar (lambda (c)
+                          (if-let (a (funcall ann c)) (list c "" a) c))
+                      candidates)
+              candidates))))
+    candidates))
+
 (defun embark-minibuffer-candidates ()
   "Return all current completion candidates from the minibuffer."
   (when (minibufferp)
@@ -2143,7 +2158,7 @@ This function is used as :after advice for `tabulated-list-revert'."
       (when last (setcdr last nil))
       (cons
        (completion-metadata-get (embark--metadata) 'category)
-       all))))
+       (embark--affixate all)))))
 
 (defun embark-sorted-minibuffer-candidates ()
   "Return a sorted list of current minibuffer completion candidates.
@@ -2154,7 +2169,8 @@ list `embark-candidate-collectors'."
   (when (minibufferp)
     (cons
      (completion-metadata-get (embark--metadata) 'category)
-     (nconc (cl-copy-list (completion-all-sorted-completions)) nil))))
+     (embark--affixate
+      (nconc (cl-copy-list (completion-all-sorted-completions)) nil)))))
 
 (declare-function dired-get-marked-files "dired")
 
@@ -2217,7 +2233,7 @@ This makes `embark-export' work in Embark Collect buffers."
            ;; TODO next line looks a little funny now
            (push (cdr (embark-target-completion-at-point 'relative-path)) all)
            (next-completion 1))
-         (nreverse all))))))
+         (embark--affixate (nreverse all) completion-reference-buffer))))))
 
 (defun embark-custom-candidates ()
   "Return all variables and faces listed in this `Custom-mode' buffer."
@@ -2400,13 +2416,9 @@ determine the width."
 
 (defun embark-collect--list-view ()
   "List view of candidates and annotations for Embark Collect buffer."
-  (let ((candidates (if embark-collect-affixator
-                        (funcall embark-collect-affixator
-                                 embark-collect-candidates)
-                      embark-collect-candidates)))
     (setq tabulated-list-format
-          (if embark-collect-affixator
-              `[("Candidate" ,(embark-collect--max-width candidates) t)
+          (if (seq-some #'consp embark-collect-candidates)
+              `[("Candidate" ,(embark-collect--max-width embark-collect-candidates) t)
                 ("Annotation" 0 t)]
             [("Candidate" 0 t)]))
     (if tabulated-list-use-header-line
@@ -2414,25 +2426,22 @@ determine the width."
       (setq header-line-format nil tabulated-list--header-string nil))
     (setq tabulated-list-entries
           (mapcar
-           (if embark-collect-affixator
-               (let ((dir default-directory)) ; smuggle to the target window
-                 (with-current-buffer (embark--target-buffer)
-                   (let ((default-directory dir)) ; for file annotator
-                     (pcase-lambda (`(,cand ,prefix ,annotation))
-                       (let* ((length (length annotation))
-                              (faces (text-property-not-all
-                                      0 length 'face nil annotation)))
-                         (when faces (add-face-text-property
-                                      0 length 'default t annotation))
-                         `(,cand
-                           [(,(propertize cand 'line-prefix prefix)
-                             type embark-collect-entry)
-                            (,annotation
-                             ,@(unless faces
-                                 '(face embark-collect-annotation)))]))))))
-             (lambda (cand)
-               `(,cand [(,cand type embark-collect-entry)])))
-           candidates))))
+           (lambda (cand)
+             (pcase cand
+               (`(,cand ,prefix ,annotation)
+                (let* ((length (length annotation))
+                       (faces (text-property-not-all
+                               0 length 'face nil annotation)))
+                  (when faces
+                    (add-face-text-property 0 length 'default t annotation))
+                  `(,cand
+                    [(,(propertize cand 'line-prefix prefix)
+                      type embark-collect-entry)
+                     (,annotation
+                      ,@(unless faces
+                          '(face embark-collect-annotation)))])))
+               (_ `(,cand [(,cand type embark-collect-entry)]))))
+           embark-collect-candidates)))
 
 (defun embark-collect--remove-zebra-stripes ()
   "Remove highlighting of alternate rows."
@@ -2488,30 +2497,10 @@ This is specially useful to tell where multi-line entries begin and end."
                    (list nil
                          (apply #'vector
                                 (cl-loop repeat columns
+                                         with cand = (or (pop cands) "")
                                          collect
-                                         `(,(or (pop cands) "")
+                                         `(,(if (stringp cand) cand (car cand))
                                            type embark-collect-entry))))))))
-
-(defun embark-collect--metadatum (type metadatum)
-  "Get METADATUM for current buffer's candidates.
-For non-minibuffers, assume candidates are of given TYPE."
-  (if (minibufferp)
-      (or (completion-metadata-get (embark--metadata) metadatum)
-          (plist-get completion-extra-properties
-                     (intern (format ":%s" metadatum))))
-    ;; otherwise fake some metadata for Marginalia users's benefit
-    (completion-metadata-get `((category . ,type)) metadatum)))
-
-(defun embark-collect--affixator (type)
-  "Get affixation function for current buffer's candidates.
-For non-minibuffers, assume candidates are of given TYPE."
-  (or (embark-collect--metadatum type 'affixation-function)
-      (when-let ((annotator
-                  (embark-collect--metadatum type 'annotation-function)))
-        (lambda (candidates)
-          (mapcar (lambda (c)
-                    (if-let (a (funcall annotator c)) (list c "" a) c))
-                  candidates)))))
 
 (defun embark-collect--revert ()
   "Recalculate Embark Collect candidates if possible."
@@ -2523,11 +2512,7 @@ For non-minibuffers, assume candidates are of given TYPE."
       (setq embark--type type
             embark-collect-candidates candidates
             default-directory (with-current-buffer embark-collect-from
-                                (embark--default-directory))
-            embark-collect-affixator (or ; new annotator? (marginalia-cycle)
-                                      (with-current-buffer embark-collect-from
-                                        (embark-collect--affixator type))
-                                      embark-collect-affixator))))
+                                (embark--default-directory)))))
   (if (eq embark-collect-view 'list)
       (embark-collect--list-view)
     (embark-collect--grid-view)))
@@ -2605,8 +2590,7 @@ the minibuffer is exited."
       ((from (current-buffer))
        (buffer (generate-new-buffer name))
        (`(,type . ,candidates)
-        (run-hook-with-args-until-success 'embark-candidate-collectors))
-       (affixator (embark-collect--affixator type)))
+        (run-hook-with-args-until-success 'embark-candidate-collectors)))
     (if (and (null candidates) (eq kind :snapshot))
         (user-error "No candidates to collect")
       (setq embark-collect-linked-buffer buffer)
@@ -2631,8 +2615,7 @@ the minibuffer is exited."
           (setq embark-collect-from from))
 
         (setq embark--type type
-              embark-collect-candidates candidates
-              embark-collect-affixator affixator)
+              embark-collect-candidates candidates)
 
         (add-hook 'tabulated-list-revert-hook #'embark-collect--revert nil t)
 
@@ -2934,7 +2917,7 @@ Return the category metadatum as the type of the candidates."
     (when (eq vertico--input t)
       (vertico--exhibit))
     (cons (completion-metadata-get (embark--metadata) 'category)
-          vertico--candidates)))
+          (embark--affixate vertico--candidates))))
 
 (with-eval-after-load 'vertico
   (add-hook 'embark-target-finders #'embark--vertico-selected)
@@ -2967,9 +2950,10 @@ Return the category metadatum as the type of the candidates."
     (unless selectrum--previous-input-string
       (selectrum-exhibit))
     (cons (selectrum--get-meta 'category)
-	  (selectrum-get-current-candidates
-	   ;; Pass relative file names for dired.
-	   minibuffer-completing-file-name))))
+	  (embark--affixate
+           (selectrum-get-current-candidates
+	    ;; Pass relative file names for dired.
+	    minibuffer-completing-file-name)))))
 
 (with-eval-after-load 'selectrum
   (add-hook 'embark-target-finders #'embark--selectrum-selected)
@@ -3006,7 +2990,7 @@ Return the category metadatum as the type of the target."
      ;; table, but it doesn't understand metadata queries
      (ignore-errors
        (completion-metadata-get (embark--metadata) 'category))
-     ivy--old-cands)))
+     (embark--affixate ivy--old-cands))))
 
 (with-eval-after-load 'ivy
   (add-hook 'embark-target-finders #'embark--ivy-selected)
