@@ -2913,7 +2913,7 @@ PRED is a predicate function used to filter the items."
               ;; The customization widget relies on this.
               (let ((val (symbol-value sym)))
                 (or (read (format "%S" val)) t))
-            (t nil))))))
+            (error nil))))))
 
 (defun embark-export-ibuffer (buffers)
   "Create an ibuffer buffer listing BUFFERS."
